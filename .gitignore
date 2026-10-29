@@ -1,7 +1,11 @@
 data/raw/
+data/parsed_weeks/
 site/_selftest.html
 site/_selftest.js
+site/_frame.html
+site/_chk.html
 site/_mobile*.html
 __pycache__/
 *.pyc
+probe_out.txt
 .venv/

@@ -1,15 +1,16 @@
-/* Расписание КГМУ — статичный клон (данные: kazangmu.ru / calendar.kazangmu.org) */
+/* Расписание КГМУ — поиск по группе и датам */
 'use strict';
 
-const DAY_NAMES = { 1: 'ПН', 2: 'ВТ', 3: 'СР', 4: 'ЧТ', 5: 'ПТ', 6: 'СБ', 7: 'ВС' };
-const DAY_FULL = { 1: 'Понедельник', 2: 'Вторник', 3: 'Среда', 4: 'Четверг', 5: 'Пятница', 6: 'Суббота', 7: 'Воскресенье' };
-const DAY_COLORS = {
-  1: 'var(--mon1)', 2: 'var(--tue1)', 3: 'var(--wed1)',
-  4: 'var(--thu1)', 5: 'var(--fri1)', 6: 'var(--sat1)', 7: '#ffffff'
-};
+const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля',
+  'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
 const TYPE_LABEL = { lecture: 'Лекция', practice: 'Практика', cycle: 'Цикл', seminar: 'Семинар' };
+const TEACHER_PREFIX = {
+  'доц.': 'Доцент', 'проф.': 'Профессор', 'асс.': 'Ассистент', 'ст.преп.': 'Ст. преподаватель',
+  'ст. преп.': 'Ст. преподаватель', 'преп.': 'Преподаватель', 'доцент': 'Доцент',
+};
 
-const $ = (sel) => document.querySelector(sel);
+const $ = (s) => document.querySelector(s);
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -17,429 +18,442 @@ const el = (tag, cls, text) => {
   return n;
 };
 
-let DATA = null;
-let state = { program: 0, programId: '', course: 0, group: '', view: 'grid', query: '' };
+let INDEX = null;           // {groups: [...], scans: {...}, generated}
+let GROUPS = [];            // [{n, prog, code, course, form}]
+let cache = {};             // имя группы -> данные
+let activeIdx = -1;
 
-/* ---------- url ---------- */
-function readUrl() {
-  const p = new URLSearchParams(location.search);
-  state.programId = p.get('p') || '';
-  state.course = Number(p.get('c') || 0);
-  state.group = p.get('g') || '';
-  state.view = p.get('v') === 'days' ? 'days' : 'grid';
-  state.query = p.get('q') || '';
+/* ---------- утилиты дат ---------- */
+function iso(d) {
+  const z = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
+}
+function parseIso(s) {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+function fmtLong(d) {
+  const wd = WEEKDAYS[d.getDay()];
+  const wdCap = wd.charAt(0).toUpperCase() + wd.slice(1);
+  return `${wdCap}, ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} г.`;
+}
+function fmtShort(d) {
+  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+}
+function mondayOf(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const wd = x.getDay() === 0 ? 7 : x.getDay();
+  x.setDate(x.getDate() - (wd - 1));
+  return x;
+}
+function eachDate(from, to, limit = 400) {
+  const out = [];
+  const cur = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  while (cur <= to && out.length < limit) {
+    out.push(new Date(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
 }
 
-function writeUrl() {
-  const p = new URLSearchParams();
-  p.set('p', curProgram().id);
-  p.set('c', state.course);
-  if (state.group) p.set('g', state.group);
-  if (state.view !== 'grid') p.set('v', state.view);
-  if (state.query) p.set('q', state.query);
-  const url = location.pathname + '?' + p.toString();
-  history.replaceState(null, '', url);
+/* ---------- данные ---------- */
+async function loadIndex() {
+  const r = await fetch('data/index.json', { cache: 'no-cache' });
+  INDEX = await r.json();
+  GROUPS = INDEX.groups || [];
+  $('#yearLabel').textContent = INDEX.year || '2026/2027';
+  $('#stamp').textContent = INDEX.generated || '—';
 }
 
-/* ---------- выбор ---------- */
-function curProgram() { return DATA.programs[state.program] || DATA.programs[0]; }
-function curCourse() {
-  const p = curProgram();
-  return p.courses[state.course] || p.courses[0];
+async function loadGroup(name) {
+  if (cache[name]) return cache[name];
+  const r = await fetch('data/g/' + encodeURIComponent(name) + '.json', { cache: 'no-cache' });
+  if (!r.ok) throw new Error('нет данных для группы ' + name);
+  const d = await r.json();
+  cache[name] = d;
+  return d;
 }
 
-function fillPrograms() {
-  const sel = $('#selProgram');
-  sel.innerHTML = '';
-  DATA.programs.forEach((p, i) => {
-    const o = el('option', null, `${p.code ? p.code + ' — ' : ''}${p.title}${p.form && p.form !== 'очная' ? ' (' + p.form + ')' : ''}`);
-    o.value = i;
-    sel.appendChild(o);
+/* ---------- группа: выпадающий список ---------- */
+const drop = () => $('#groupDrop');
+const input = () => $('#groupInput');
+
+function groupSub(g) {
+  const bits = [];
+  if (g.prog) bits.push(g.prog);
+  if (g.course) bits.push(g.course + ' курс');
+  return bits.join(' · ');
+}
+
+function openDrop(query) {
+  const q = (query || '').trim().toLowerCase();
+  const list = q ? GROUPS.filter((g) => g.n.toLowerCase().includes(q)) : GROUPS;
+  const box = drop();
+  box.innerHTML = '';
+  activeIdx = -1;
+  if (!list.length) {
+    box.appendChild(el('div', 'combo-empty', 'Группа не найдена'));
+  } else {
+    list.slice(0, 80).forEach((g, i) => {
+      const item = el('div', 'combo-item');
+      item.setAttribute('role', 'option');
+      item.dataset.name = g.n;
+      item.appendChild(el('span', null, g.n));
+      item.appendChild(el('small', null, groupSub(g)));
+      item.addEventListener('mousedown', (e) => { e.preventDefault(); pickGroup(g.n); });
+      if (i === 0) activeIdx = 0;
+      box.appendChild(item);
+    });
+  }
+  box.hidden = false;
+  input().setAttribute('aria-expanded', 'true');
+}
+
+function closeDrop() {
+  drop().hidden = true;
+  input().setAttribute('aria-expanded', 'false');
+}
+
+function pickGroup(name) {
+  input().value = name;
+  closeDrop();
+  updateHint();
+}
+
+function updateHint() {
+  const name = input().value.trim();
+  const g = GROUPS.find((x) => x.n === name);
+  const hint = $('#groupHint');
+  if (!name) { hint.textContent = ''; return; }
+  if (g) {
+    hint.textContent = [g.code, g.prog, g.course ? g.course + ' курс' : '', g.form && g.form !== 'очная' ? g.form : '']
+      .filter(Boolean).join(' · ');
+  } else {
+    hint.textContent = 'такой группы нет в базе';
+  }
+}
+
+/* ---------- расчёт расписания ---------- */
+const SEMESTER_WEEK1 = new Date(2026, 7, 31);   // понедельник недели, в которую попадает 1 сентября 2026
+
+function weekNo(date) {
+  const d0 = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return Math.floor((d0 - SEMESTER_WEEK1) / (7 * 864e5)) + 1;
+}
+
+function preprocess(payload) {
+  const byWd = {};
+  (payload.lessons || []).forEach((l) => {
+    (byWd[l.wd] = byWd[l.wd] || []).push(l);
   });
-  sel.value = state.program;
-}
-
-function resolveProgram() {
-  if (!state.programId) return;
-  const i = DATA.programs.findIndex((p) => p.id === state.programId);
-  state.program = i >= 0 ? i : 0;
-}
-
-function fillCourses() {
-  const sel = $('#selCourse');
-  sel.innerHTML = '';
-  curProgram().courses.forEach((c, i) => {
-    const o = el('option', null, c.label);
-    o.value = i;
-    sel.appendChild(o);
+  Object.values(byWd).forEach((arr) => arr.sort((a, b) => a.ts.localeCompare(b.ts)));
+  const weeks = payload.weeks || {};
+  const byWeek = {};
+  Object.keys(weeks).forEach((w) => {
+    const arr = (weeks[w] || []).slice().sort((a, b) => a.ts.localeCompare(b.ts));
+    byWeek[w] = arr;
   });
-  sel.value = state.course;
+  return { byWd, cycles: payload.cycles || [], byWeek, hasWeeks: Object.keys(byWeek).length > 0 };
 }
 
-function fillGroups() {
-  const c = curCourse();
-  const names = c.groups.map((g) => g.name);
-  if (!names.includes(state.group)) state.group = names[0] || '';
-  const inp = $('#inpGroup');
-  inp.disabled = !names.length;
-  inp.placeholder = names.length ? 'номер группы' : 'скан документа';
-  const dl = $('#groupList');
-  dl.innerHTML = '';
-  names.forEach((n) => {
-    const o = el('option');
-    o.value = n;
-    dl.appendChild(o);
+function cyclesOn(date, cycles) {
+  const key = iso(date);
+  const out = [];
+  cycles.forEach((c) => {
+    c.periods.forEach((p) => {
+      if (key >= p.from && key <= p.to) {
+        out.push({
+          ts: p.ts, te: p.te, type: 'cycle', subject: c.subject,
+          teacher: c.teacher, place: c.place, sub: '', hours: p.hours,
+        });
+      }
+    });
   });
-  $('#inpGroup').value = state.group;
+  return out;
 }
 
-/* ---------- отрисовка ---------- */
-function renderMeta() {
-  const p = curProgram(), c = curCourse();
-  $('#docProgram').textContent = (p.code ? p.code + ' ' : '') + p.title;
-  $('#docLevel').textContent = p.level || '—';
-  $('#docForm').textContent = p.form || '—';
-  $('#docCourse').textContent = c.label || '';
-  $('#docSemester').textContent = `на ${DATA.semester} семестр ${DATA.year.replace('/', ' /')} уч.г.`;
+function dayLessons(date, data) {
+  const wd = date.getDay() === 0 ? 7 : date.getDay();
+  if (data.hasWeeks) {
+    const arr = data.byWeek[String(weekNo(date))] || [];
+    return arr.filter((l) => l.wd === wd);
+  }
+  const base = (data.byWd[wd] || []).slice();
+  const cyc = cyclesOn(date, data.cycles);
+  if (!cyc.length) return base;
+  // во время цикла практические занятия группы не идут — остаются лекции
+  const cycTimes = new Set(cyc.map((c) => c.ts));
+  const kept = base.filter((l) => l.type === 'lecture' || !cycTimes.has(l.ts));
+  return kept.concat(cyc).sort((a, b) => a.ts.localeCompare(b.ts));
 }
 
-function lessonGroups(l) { return l.groups && l.groups.length ? l.groups : []; }
-
-function filterLessons(list) {
-  const q = state.query.trim().toLowerCase();
-  if (!q) return list;
-  return list.filter((l) =>
-    (l.subject || '').toLowerCase().includes(q) ||
-    (l.teacher || '').toLowerCase().includes(q) ||
-    (l.place || '').toLowerCase().includes(q));
+/* ---------- вывод ---------- */
+function subLabel(sub) {
+  const s = (sub || '').trim();
+  if (!s) return '';
+  if (/^1[-\u2013]\d{1,2}$/.test(s)) {
+    const end = Number(s.split(/[-\u2013]/)[1]);
+    if (end >= 15) return '';                // вся группа — не показываем
+  }
+  if (/^\d+$/.test(s)) return 'Подгруппа ' + s;
+  if (/^\d+\s*[-–]\s*\d+$/.test(s)) return 'Подгруппы ' + s.replace(/\s*[-–]\s*/, '–');
+  if (/^[\d,\s]+$/.test(s)) return 'Подгруппы ' + s.replace(/\s*,\s*/g, ', ');
+  return 'Подгруппы ' + s.replace(/\s*[-–]\s*/g, '–');
 }
 
-/* --- сетка как в оригинале --- */
-function renderGrid() {
-  const c = curCourse();
-  const host = $('#viewHost');
+function prettifyTeacher(t) {
+  const s = (t || '').trim();
+  if (!s) return '';
+  for (const [k, v] of Object.entries(TEACHER_PREFIX)) {
+    if (s.toLowerCase().startsWith(k)) {
+      return v + ' ' + s.slice(k.length).trim();
+    }
+  }
+  return s;
+}
+
+function renderLesson(l) {
+  const box = el('div', 'lesson');
+  const row = el('div', 'lesson-row');
+  row.appendChild(el('span', 'time-chip', `${l.ts}–${l.te || ''}`));
+  if (l.type && TYPE_LABEL[l.type]) {
+    row.appendChild(el('span', 'type-chip', TYPE_LABEL[l.type]));
+  }
+  const sl = subLabel(l.sub);
+  if (sl) row.appendChild(el('span', 'sub-chip', sl));
+  if (l.hours) row.appendChild(el('span', 'cycle-chip', `${l.hours} ч`));
+  box.appendChild(row);
+  if (l.place) box.appendChild(el('div', 'lesson-place', l.place));
+  box.appendChild(el('div', 'lesson-subject', l.subject || ''));
+  const t = prettifyTeacher(l.teacher);
+  if (t) box.appendChild(el('div', 'lesson-teacher', t));
+  return box;
+}
+
+function renderDays(dates, data) {
+  const host = $('#results');
   host.innerHTML = '';
+  const today = iso(new Date());
+  let total = 0;
+  dates.forEach((d) => {
+    if (d.getDay() === 0) return;              // воскресенье пропускаем
+    const lessons = dayLessons(d, data);
+    const block = el('section', 'day');
+    const h = el('h2', 'day-title', fmtLong(d));
+    if (data.hasWeeks) h.appendChild(el('span', 'week-note', `${weekNo(d)}-я неделя`));
+    if (iso(d) === today) h.appendChild(el('span', 'today', 'сегодня'));
+    block.appendChild(h);
+    if (!lessons.length) {
+      block.appendChild(el('div', 'no-lessons', 'Занятий нет'));
+    } else {
+      lessons.forEach((l) => block.appendChild(renderLesson(l)));
+      total += lessons.length;
+    }
+    host.appendChild(block);
+  });
+  return total;
+}
 
-  let groups = c.groups.map((g) => g.name);
-  const lessons = c.lessons;
-  const matches = filterLessons(lessons);
-  const matchIds = new Set(matches.map((m) => m));
-
-  // строки: все встречающиеся начала занятий
-  const starts = Array.from(new Set(lessons.map((l) => l.ts))).sort();
-  if (!starts.length) {
-    host.appendChild(el('p', 'empty', 'Для этого курса расписание пока не загружено.'));
+/* ---------- поиск ---------- */
+async function doSearch(push) {
+  const name = input().value.trim();
+  const from = parseIso($('#dateFrom').value);
+  const to = parseIso($('#dateTo').value);
+  const host = $('#results');
+  if (!name) {
+    host.innerHTML = '';
+    host.appendChild(el('div', 'empty-state', 'Выберите группу из списка и нажмите «Поиск».'));
     return;
   }
-  const idx = new Map(starts.map((s, i) => [s, i]));
-  // типичное время окончания для каждого начала (в сетке строки по 45 минут)
-  const endByStart = new Map();
-  lessons.forEach((l) => {
-    if (!endByStart.has(l.ts)) endByStart.set(l.ts, new Map());
-    const m = endByStart.get(l.ts);
-    m.set(l.te, (m.get(l.te) || 0) + 1);
-  });
-  const slotEnd = (s) => {
-    const m = endByStart.get(s);
-    if (!m) return '';
-    return Array.from(m.entries()).sort((a, b) => b[1] - a[1])[0][0];
-  };
-  const days = Array.from(new Set(lessons.map((l) => l.wd))).sort((a, b) => a - b);
-
-  const narrow = window.matchMedia('(max-width: 640px)').matches;
-  if (narrow && state.group && groups.includes(state.group)) groups = [state.group];
-  const colOffset = narrow ? 3 : 4;   // в какой столбец начинаются группы
-  const wrap = el('div', 'grid-wrap');
-  const grid = el('div', 'grid');
-  grid.style.gridTemplateColumns = narrow
-    ? `2.4rem 2.8rem minmax(0, 1fr)`
-    : `3rem 3rem 3rem repeat(${groups.length}, minmax(13rem, auto))`;
-  grid.classList.toggle('narrow', narrow);
-
-  // шапка
-  const heads = narrow ? ['', ''] : ['', '', ''];
-  heads.forEach((h) => grid.appendChild(el('div', 'gcell head', h)));
-  const headEls = [];
-  groups.forEach((g) => {
-    const h = el('div', 'gcell head', g);
-    headEls.push(h);
-    grid.appendChild(h);
-  });
-
-  const gi0 = groups.indexOf(state.group);
-  if (gi0 >= 0) headEls[gi0].classList.add('active');
-
-  // индексы занятий по (день, группа)
-  const byDayGroup = new Map();
-  lessons.forEach((l) => {
-    lessonGroups(l).forEach((g) => {
-      const key = l.wd + '|' + g;
-      if (!byDayGroup.has(key)) byDayGroup.set(key, []);
-      byDayGroup.get(key).push(l);
-    });
-  });
-
-  let row = 2;
-  days.forEach((wd) => {
-    const blockStart = row;
-    starts.forEach((s, si) => {
-      const t = lessons.find((l) => l.wd === wd && l.ts === s);
-      const te = slotEnd(s);
-      const dayCell = el('div', 'gcell day sticky-l pos-1' + (si === 0 ? '' : ' hidden-day'), DAY_NAMES[wd]);
-      if (si === 0) {
-        dayCell.style.gridArea = `${blockStart} / 1 / span ${starts.length}`;
-        grid.appendChild(dayCell);
-      }
-      const c1 = el('div', 'gcell time sticky-l pos-2', s);
-      c1.style.gridArea = `${row} / 2`;
-      c1.style.background = DAY_COLORS[wd];
-      grid.appendChild(c1);
-      if (!narrow) {
-        const c2 = el('div', 'gcell time sticky-l pos-3', te);
-        c2.style.gridArea = `${row} / 3`;
-        c2.style.background = DAY_COLORS[wd];
-        grid.appendChild(c2);
-      }
-      row += 1;
-    });
-
-    // занятия: размещаем по колонкам групп со спаном строк
-    groups.forEach((g, gi) => {
-      const items = (byDayGroup.get(wd + '|' + g) || []).slice().sort((a, b) => a.ts.localeCompare(b.ts));
-      const covered = new Set();
-      // занятия, перекрывающиеся по времени (подгруппы), собираем в одну ячейку
-      const clusters = [];
-      items.forEach((l) => {
-        const last = clusters[clusters.length - 1];
-        if (last && l.ts < last.te) {
-          last.items.push(l);
-          if (l.te > last.te) last.te = l.te;
-        } else {
-          clusters.push({ ts: l.ts, te: l.te, items: [l] });
-        }
-      });
-      clusters.forEach((cl) => {
-        const i0 = idx.get(cl.ts);
-        if (i0 == null) return;
-        let span = 1;
-        for (let k = i0 + 1; k < starts.length; k += 1) {
-          if (starts[k] < cl.te) span += 1; else break;
-        }
-        for (let k = i0; k < i0 + span; k += 1) covered.add(k);
-        const cell = el('div', 'glesson');
-        cell.style.gridArea = `${blockStart + i0} / ${colOffset + gi} / span ${span} / span 1`;
-        cell.style.background = DAY_COLORS[wd];
-        cl.items.forEach((l, li) => {
-          if (li) cell.appendChild(el('span', 'sep'));
-          const line = el('span', 'gitem');
-          if (state.query && !matchIds.has(l)) line.style.opacity = '.3';
-          if (l.type && TYPE_LABEL[l.type]) {
-            line.appendChild(el('span', 'lt', TYPE_LABEL[l.type] + ': '));
-          }
-          line.appendChild(document.createTextNode(`«${l.subject}»`));
-          if (l.subgroups) line.appendChild(document.createTextNode(` (${l.subgroups})`));
-          cell.appendChild(line);
-          const meta = [l.teacher, l.place].filter(Boolean).join(', ');
-          if (meta) cell.appendChild(el('span', 'meta', meta));
-        });
-        grid.appendChild(cell);
-      });
-      // пустые ячейки для строк без занятий
-      starts.forEach((s, si) => {
-        if (covered.has(si)) return;
-        const empty = el('div', 'gcell', '');
-        empty.style.gridArea = `${blockStart + si} / ${colOffset + gi}`;
-        grid.appendChild(empty);
-      });
-    });
-  });
-
-  grid.style.gridTemplateRows = `auto repeat(${row - 2}, minmax(22px, auto))`;
-  wrap.appendChild(grid);
-  host.appendChild(wrap);
-  if (gi0 >= 0 && headEls[gi0]) {
-    requestAnimationFrame(() => {
-      wrap.scrollLeft = Math.max(0, headEls[gi0].offsetLeft - 80);
-    });
+  if (!(from instanceof Date) || isNaN(from) || !(to instanceof Date) || isNaN(to) || to < from) {
+    host.innerHTML = '';
+    host.appendChild(el('div', 'empty-state', 'Проверьте даты: начало периода должно быть раньше конца.'));
+    return;
+  }
+  if (to - from > 1000 * 60 * 60 * 24 * 120) {
+    host.innerHTML = '';
+    host.appendChild(el('div', 'empty-state', 'Слишком большой период — выберите не больше 4 месяцев.'));
+    return;
+  }
+  const btn = $('#searchBtn');
+  btn.disabled = true;
+  host.innerHTML = '';
+  host.appendChild(el('div', 'empty-state', 'Загрузка…'));
+  try {
+    const payload = await loadGroup(name);
+    const data = preprocess(payload);
+    const dates = eachDate(from, to);
+    host.innerHTML = '';
+    const head = el('div', 'result-head');
+    head.innerHTML = '';
+    head.appendChild(el('b', null, `Группа ${name}`));
+    head.appendChild(document.createTextNode(
+      ` · ${payload.prog || ''}${payload.course ? ', ' + payload.course + ' курс' : ''} · ` +
+      `${fmtShort(from)} — ${fmtShort(to)}`));
+    host.appendChild(head);
+    const total = renderDays(dates, data);
+    if (!total) {
+      const none = el('div', 'empty-state',
+        'На этот период занятий в базе нет. Проверьте даты: база содержит осенний семестр 2026/2027.');
+      host.appendChild(none);
+    }
+    if (push && window.matchMedia('(max-width: 760px)').matches) {
+      const top = host.getBoundingClientRect().top + window.scrollY - 8;
+      window.scrollTo({ top, behavior: 'smooth' });
+    }
+    if (push) {
+      const p = new URLSearchParams();
+      p.set('g', name);
+      p.set('from', iso(from));
+      p.set('to', iso(to));
+      history.replaceState(null, '', location.pathname + '?' + p.toString());
+    }
+  } catch (e) {
+    host.innerHTML = '';
+    host.appendChild(el('div', 'empty-state', 'Не удалось загрузить расписание этой группы.'));
+    console.error(e);
+  } finally {
+    btn.disabled = false;
   }
 }
 
-/* --- скан официального документа --- */
-function renderScans(c) {
-  const host = $('#viewHost');
+/* ---------- пресеты дат ---------- */
+function markPreset(kind) {
+  document.querySelectorAll('[data-preset]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.preset === kind);
+  });
+}
+
+function setPreset(kind) {
+  markPreset(kind);
+  const now = new Date();
+  let from, to;
+  if (kind === 'current') {
+    from = mondayOf(now);
+    to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 6);
+  } else if (kind === 'next') {
+    from = new Date(mondayOf(now).getTime() + 7 * 864e5);
+    to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 6);
+  } else {
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
+    to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  }
+  $('#dateFrom').value = iso(from);
+  $('#dateTo').value = iso(to);
+  markPreset(kind);
+}
+
+/* ---------- сканы ---------- */
+function renderScans() {
+  const host = $('#results');
   host.innerHTML = '';
-  const wrap = el('div', 'scans');
-  c.scans.forEach((src, i) => {
-    const fig = el('figure', 'scan');
+  const scans = (INDEX && INDEX.scans) || {};
+  const keys = Object.keys(scans);
+  if (!keys.length) {
+    host.appendChild(el('div', 'empty-state', 'Сканов нет.'));
+    return;
+  }
+  const head = el('div', 'result-head', 'Сканы официальных документов (заочные и магистерские направления)');
+  host.appendChild(head);
+  const list = el('div', 'scans-list');
+  keys.forEach((k) => {
+    const s = scans[k];
+    const card = el('div', 'scan-card');
+    card.appendChild(el('h3', null, s.label ? s.label : k));
+    card.appendChild(el('p', null, `${s.status ? 'Страниц: ' + s.pages_count : ''}`.trim() || `Страниц: ${s.pages_count}`));
+    const link = el('a', null, 'открыть скан');
+    link.href = '#';
+    link.addEventListener('click', (e) => { e.preventDefault(); showScan(s); });
+    card.appendChild(link);
+    list.appendChild(card);
+  });
+  host.appendChild(list);
+}
+
+function showScan(s) {
+  const host = $('#results');
+  host.innerHTML = '';
+  const back = el('button', 'chip-btn', '← назад к списку');
+  back.type = 'button';
+  back.addEventListener('click', renderScans);
+  host.appendChild(back);
+  const box = el('div', 'scans-view');
+  (s.pages || []).forEach((src, i) => {
     const img = document.createElement('img');
     img.loading = i ? 'lazy' : 'eager';
     img.src = src;
-    img.alt = `Страница ${i + 1} расписания`;
-    img.decoding = 'async';
-    fig.appendChild(img);
-    fig.appendChild(el('figcaption', null, `Страница ${i + 1} из ${c.scans.length}`));
-    wrap.appendChild(fig);
-  });
-  host.appendChild(wrap);
-}
-
-/* --- цикловые занятия (4-6 курс) --- */
-function renderCycles(c) {
-  const host = $('#viewHost');
-  host.innerHTML = '';
-  const group = state.group || (c.groups[0] && c.groups[0].name);
-  const list = c.cycles.filter((x) => x.group === group);
-  const box = el('div', 'cycles');
-  const head = el('p', 'cycles-head', `Группа ${group} · ${list.length} циклов`);
-  box.appendChild(head);
-  if (!list.length) {
-    box.appendChild(el('p', 'empty', 'Для этой группы циклы не найдены.'));
-  }
-  list.forEach((cy) => {
-    const card = el('div', 'cycle');
-    const top = el('div', 'cycle-top');
-    top.appendChild(el('span', 'cycle-subj', cy.subject));
-    card.appendChild(top);
-    if (cy.teacher) card.appendChild(el('div', 'cycle-meta', cy.teacher));
-    if (cy.place) card.appendChild(el('div', 'cycle-meta', cy.place));
-    const periods = el('div', 'cycle-periods');
-    cy.periods.forEach((p) => {
-      const row = el('div', 'cycle-period');
-      row.appendChild(el('span', 'cp-dates', p.dates || '—'));
-      if (p.start) row.appendChild(el('span', 'cp-time', `${p.start}–${p.end}`));
-      if (p.hours) row.appendChild(el('span', 'cp-hours', `${p.hours} ч`));
-      periods.appendChild(row);
-    });
-    card.appendChild(periods);
-    box.appendChild(card);
+    img.alt = `Страница ${i + 1}`;
+    box.appendChild(img);
   });
   host.appendChild(box);
 }
 
-/* --- карточки по дням --- */
-function renderDays() {
-  const c = curCourse();
-  const host = $('#viewHost');
-  host.innerHTML = '';
-  const group = state.group;
-  const days = el('div', 'days');
-
-  const list = filterLessons(c.lessons.filter((l) => lessonGroups(l).includes(group)));
-  const byDay = new Map();
-  list.forEach((l) => {
-    if (!byDay.has(l.wd)) byDay.set(l.wd, []);
-    byDay.get(l.wd).push(l);
-  });
-
-  if (!byDay.size) {
-    host.appendChild(el('p', 'empty', 'Занятий не найдено.'));
-    return;
-  }
-
-  Array.from(byDay.keys()).sort((a, b) => a - b).forEach((wd) => {
-    const block = el('section', 'day-block');
-    const head = el('div', 'day-head');
-    head.style.background = DAY_COLORS[wd];
-    head.appendChild(el('span', null, DAY_FULL[wd]));
-    head.appendChild(el('small', null, group ? 'группа ' + group : ''));
-    block.appendChild(head);
-    byDay.get(wd).sort((a, b) => a.ts.localeCompare(b.ts)).forEach((l) => {
-      const row = el('div', 'lesson');
-      row.appendChild(el('div', 'lesson-time', `${l.ts}–${l.te}`));
-      const body = el('div', 'lesson-body');
-      const subj = el('div', 'lesson-subj');
-      if (l.type && TYPE_LABEL[l.type]) subj.appendChild(el('span', 'type', TYPE_LABEL[l.type]));
-      subj.appendChild(document.createTextNode(l.subject));
-      if (l.subgroups) subj.appendChild(el('span', 'muted', ` · подгр. ${l.subgroups}`));
-      body.appendChild(subj);
-      const meta = el('div', 'lesson-meta');
-      if (l.teacher) meta.appendChild(el('span', null, l.teacher));
-      if (l.place) meta.appendChild(el('span', null, l.place));
-      if (l.teacher || l.place) body.appendChild(meta);
-      row.appendChild(body);
-      block.appendChild(row);
-    });
-    days.appendChild(block);
-  });
-  host.appendChild(days);
-}
-
-function render() {
-  const p = curProgram();
-  renderMeta();
-  $('#viewToggle').textContent = state.view === 'grid' ? 'Сетка' : 'Дни';
-  $('#viewToggle').disabled = !!(curCourse().cycles || (curCourse().scans && !curCourse().lessons.length));
-  const c = curCourse();
-  if (c.cycles && !c.lessons.length) {
-    renderCycles(c);
-    $('#docNote').textContent = `Цикловые занятия · ${c.groups.length} групп · источник: официальный сайт КГМУ`;
-    writeUrl();
-    return;
-  }
-  if (c.scans && !c.lessons.length) {
-    renderScans(c);
-    $('#docNote').textContent = `Официальный документ (${c.scans.length} стр.) · скан с сайта КГМУ`;
-    writeUrl();
-    return;
-  }
-  if (state.view === 'grid') renderGrid(); else renderDays();
-  const n = c.lessons.length;
-  const who = state.view === 'grid' ? `${c.groups.length} групп` : `группа ${state.group}`;
-  $('#docNote').textContent = `${who} · ${n} занятий в недельном цикле · источник: официальный сайт КГМУ`;
-  writeUrl();
-}
-
-/* ---------- события ---------- */
+/* ---------- запуск ---------- */
 function bind() {
-  $('#selProgram').addEventListener('change', (e) => {
-    state.program = Number(e.target.value);
-    state.course = 0;
-    state.group = '';
-    fillCourses(); fillGroups(); render();
+  const inp = input();
+  // если в поле уже стоит существующая группа — показываем полный список, а не фильтр по ней
+  const scopeQuery = () => {
+    const v = inp.value.trim();
+    return GROUPS.some((g) => g.n === v) ? '' : v;
+  };
+  inp.addEventListener('focus', () => openDrop(scopeQuery()));
+  inp.addEventListener('click', () => openDrop(scopeQuery()));
+  inp.addEventListener('input', () => { updateHint(); openDrop(inp.value); });
+  inp.addEventListener('keydown', (e) => {
+    const items = Array.from(drop().querySelectorAll('.combo-item'));
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!items.length) return;
+      const dir = e.key === 'ArrowDown' ? 1 : -1;
+      activeIdx = Math.max(0, Math.min(items.length - 1, activeIdx + dir));
+      items.forEach((it, i) => it.classList.toggle('active', i === activeIdx));
+      items[activeIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      if (!drop().hidden && items[activeIdx]) {
+        e.preventDefault();
+        pickGroup(items[activeIdx].dataset.name);
+      }
+    } else if (e.key === 'Escape') {
+      closeDrop();
+    }
   });
-  $('#selCourse').addEventListener('change', (e) => {
-    state.course = Number(e.target.value);
-    state.group = '';
-    fillGroups(); render();
+  $('#groupToggle').addEventListener('click', () => {
+    if (drop().hidden) openDrop(''); else closeDrop();
+    inp.focus();
   });
-  $('#inpGroup').addEventListener('input', (e) => {
-    state.group = e.target.value.trim();
-    render();
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.group-field')) closeDrop();
   });
-  $('#inpSearch').addEventListener('input', (e) => {
-    state.query = e.target.value;
-    render();
+  document.querySelectorAll('[data-preset]').forEach((b) => {
+    b.addEventListener('click', () => setPreset(b.dataset.preset));
   });
-  $('#viewToggle').addEventListener('click', () => {
-    state.view = state.view === 'grid' ? 'days' : 'grid';
-    render();
-  });
-  $('#themeToggle').addEventListener('click', () => {
-    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = next;
-    try { localStorage.setItem('kgmu_theme', next); } catch (e) { /* ignore */ }
-  });
+  $('#searchForm').addEventListener('submit', (e) => { e.preventDefault(); doSearch(true); });
+  $('#scansLink').addEventListener('click', (e) => { e.preventDefault(); renderScans(); });
 }
 
 async function boot() {
-  readUrl();
-  if (!new URLSearchParams(location.search).has('v') && window.matchMedia('(max-width: 640px)').matches) {
-    state.view = 'days';
-  }
-  try { document.documentElement.dataset.theme = localStorage.getItem('kgmu_theme') || 'light'; } catch (e) { /* ignore */ }
-  const res = await fetch('data/schedule.json', { cache: 'no-cache' });
-  DATA = await res.json();
-  resolveProgram();
-  if (state.program >= DATA.programs.length) state.program = 0;
-  if (state.course >= curProgram().courses.length) state.course = 0;
-  fillPrograms(); fillCourses(); fillGroups();
-  $('#inpSearch').value = state.query;
-  $('#stampDate').textContent = DATA.generated;
+  await loadIndex();
   bind();
-  render();
+  setPreset('current');
+  const p = new URLSearchParams(location.search);
+  const g = p.get('g');
+  const from = p.get('from');
+  const to = p.get('to');
+  if (from) $('#dateFrom').value = from;
+  if (to) $('#dateTo').value = to;
+  if (g) {
+    input().value = g;
+    updateHint();
+    await doSearch(false);
+  } else {
+    $('#results').appendChild(el('div', 'empty-state',
+      'Выберите группу — например, 1206 — и нажмите «Поиск».'));
+  }
 }
 
 boot().catch((e) => {
-  $('#viewHost').innerHTML = '<p class="empty">Не удалось загрузить данные расписания: ' + e.message + '</p>';
   console.error(e);
+  const host = $('#results');
+  host.innerHTML = '';
+  host.appendChild(el('div', 'empty-state', 'Не удалось загрузить список групп: ' + e.message));
 });
