@@ -188,18 +188,6 @@ function dayLessons(date, data) {
 }
 
 /* ---------- вывод ---------- */
-function subLabel(sub) {
-  const s = (sub || '').trim();
-  if (!s) return '';
-  if (/^1[-\u2013]\d{1,2}$/.test(s)) {
-    const end = Number(s.split(/[-\u2013]/)[1]);
-    if (end >= 15) return '';                // вся группа — не показываем
-  }
-  if (/^\d+$/.test(s)) return 'Подгруппа ' + s;
-  if (/^\d+\s*[-–]\s*\d+$/.test(s)) return 'Подгруппы ' + s.replace(/\s*[-–]\s*/, '–');
-  if (/^[\d,\s]+$/.test(s)) return 'Подгруппы ' + s.replace(/\s*,\s*/g, ', ');
-  return 'Подгруппы ' + s.replace(/\s*[-–]\s*/g, '–');
-}
 
 function prettifyTeacher(t) {
   const s = (t || '').trim();
@@ -219,8 +207,6 @@ function renderLesson(l) {
   if (l.type && TYPE_LABEL[l.type]) {
     row.appendChild(el('span', 'type-chip', TYPE_LABEL[l.type]));
   }
-  const sl = subLabel(l.sub);
-  if (sl) row.appendChild(el('span', 'sub-chip', sl));
   if (l.hours) row.appendChild(el('span', 'cycle-chip', `${l.hours} ч`));
   box.appendChild(row);
   if (l.place) box.appendChild(el('div', 'lesson-place', l.place));
