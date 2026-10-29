@@ -4,7 +4,6 @@ import os
 import re
 import sys
 import time
-from urllib.parse import quote
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
@@ -127,6 +126,22 @@ def main():
             reg_group(gname, code, title, d["meta"].get("course") or 0, "очная")
             weeks[gname] = {str(k): v for k, v in d["weeks"].items()}
 
+    # 3c) датированные занятия из сканов (заочные/очно-заочные)
+    dated = {}
+    dated_period = {}
+    ddir = os.path.join(DATA, "dated")
+    if os.path.isdir(ddir):
+        for fn in sorted(os.listdir(ddir)):
+            if not fn.endswith(".json"):
+                continue
+            d = json.load(open(os.path.join(ddir, fn), encoding="utf-8"))
+            gname = d["group"]
+            reg_group(gname, d.get("code", ""), d.get("program", ""), d.get("course") or 0,
+                      d.get("form", "заочная"))
+            dated[gname] = d.get("lessons", [])
+            if d.get("period"):
+                dated_period[gname] = d["period"]
+
     # 4) сканы (для заочных) — отдельный список
     scans = {}
     sp = os.path.join(DATA, "scans.json")
@@ -147,9 +162,11 @@ def main():
             "lessons": templates.get(name, []),
             "cycles": cycles.get(name, []),
             "weeks": weeks.get(name, {}),
+            "dated": dated.get(name, []),
+            "period": dated_period.get(name, []),
         }
         total += len(payload["lessons"])
-        path = os.path.join(OUT, "g", quote(name, safe="") + ".json")
+        path = os.path.join(OUT, "g", name + ".json")
         json.dump(payload, open(path, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print(f"групп: {len(groups)}, занятий: {total}, файлов: {len(groups)}")
     print("index.json:", os.path.getsize(os.path.join(OUT, "index.json")) // 1024, "КБ")
