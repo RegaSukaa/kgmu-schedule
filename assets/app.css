@@ -53,6 +53,32 @@ a { color: var(--green); }
   font-size: 14px;
 }
 
+/* ---------- сообщение о сайте ---------- */
+.notice {
+  max-width: 980px;
+  margin: 14px auto 0;
+  padding: 12px 14px;
+  background: var(--green-soft);
+  border: 1px solid var(--green-line);
+  border-radius: 12px;
+  font-size: 13.5px;
+  color: #14532d;
+}
+.notice-title { margin: 0 0 4px; font-weight: 750; color: var(--green); }
+.notice p { margin: 0; }
+.notice a {
+  display: inline-block;
+  margin-left: 2px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--green);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.notice a:hover { background: #0d5c31; }
+
 /* ---------- панель поиска ---------- */
 .panel {
   max-width: 980px;
@@ -338,6 +364,7 @@ a { color: var(--green); }
   .search-btn { width: 100%; }
   .results { padding: 0 10px 34px; }
   .site-head { padding: 18px 12px 4px; }
+  .notice { margin: 12px 10px 0; }
   .panel { margin: 12px 10px 0; }
   .foot { padding: 0 12px 28px; }
   .lesson { padding: 11px 12px; }
