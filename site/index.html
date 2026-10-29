@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Расписание КГМУ Казань</title>
+<meta name="description" content="Расписание занятий Казанского ГМУ на осенний семестр 2026/2027: все направления и курсы, поиск по группе, неделя и сетка как в оригинале.">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="i/negotiated_stamp.jpg">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./">
+    <span class="brand-mark">КГМУ</span>
+    <span class="brand-text">Расписание занятий</span>
+  </a>
+  <div class="topbar-actions">
+    <button id="viewToggle" class="btn" type="button" title="Переключить вид">Сетка</button>
+    <button id="themeToggle" class="btn btn-icon" type="button" title="Тема" aria-label="Переключить тему">◐</button>
+  </div>
+</header>
+
+<section class="picker" aria-label="Выбор расписания">
+  <label class="field">
+    <span>Направление</span>
+    <select id="selProgram"></select>
+  </label>
+  <label class="field">
+    <span>Курс</span>
+    <select id="selCourse"></select>
+  </label>
+  <label class="field">
+    <span>Группа</span>
+    <input id="inpGroup" list="groupList" autocomplete="off" placeholder="номер группы">
+    <datalist id="groupList"></datalist>
+  </label>
+  <label class="field field-wide">
+    <span>Поиск по расписанию</span>
+    <input id="inpSearch" type="search" placeholder="дисциплина, преподаватель, аудитория">
+  </label>
+</section>
+
+<main id="main">
+  <div class="sheet" id="sheet">
+    <div class="doc-head">
+      <div class="doc-meta">
+        <p class="doc-title">РАСПИСАНИЕ ЗАНЯТИЙ</p>
+        <p class="doc-sub" id="docSemester">на осенний семестр 2026 /2027 уч.г.</p>
+        <div class="doc-grid">
+          <p>Направление подготовки:</p><p id="docProgram">—</p>
+          <p>Уровень образования:</p><p id="docLevel">—</p>
+          <p>Форма обучения:</p><p id="docForm">—</p>
+          <p class="doc-course" id="docCourse">—</p>
+        </div>
+      </div>
+      <div class="doc-stamp" aria-hidden="true"></div>
+    </div>
+    <div id="viewHost" class="view-host"></div>
+    <p class="doc-note" id="docNote"></p>
+  </div>
+</main>
+
+<footer class="foot">
+  <p>Источник данных — официальный сайт КГМУ (<a href="https://kazangmu.ru/obuchenie/studentam/raspisanie-zanyatij" target="_blank" rel="noopener">kazangmu.ru</a>).
+     Копия сделана на случай отключения оригинального сервиса.</p>
+  <p class="muted">Обновлено: <span id="stampDate">—</span></p>
+</footer>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

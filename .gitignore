@@ -1,0 +1,7 @@
+data/raw/
+site/_selftest.html
+site/_selftest.js
+site/_mobile*.html
+__pycache__/
+*.pyc
+.venv/
