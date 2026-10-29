@@ -3,69 +3,61 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Расписание КГМУ Казань</title>
-<meta name="description" content="Расписание занятий Казанского ГМУ на осенний семестр 2026/2027: все направления и курсы, поиск по группе, неделя и сетка как в оригинале.">
-<meta name="theme-color" content="#0f172a">
+<title>Расписание КГМУ — поиск по группе</title>
+<meta name="description" content="Расписание занятий Казанского ГМУ на осенний семестр 2026/2027: выберите группу и даты — расписание по дням.">
+<meta name="theme-color" content="#0f7a3d">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="i/negotiated_stamp.jpg">
 <link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
-<header class="topbar">
-  <a class="brand" href="./">
-    <span class="brand-mark">КГМУ</span>
-    <span class="brand-text">Расписание занятий</span>
-  </a>
-  <div class="topbar-actions">
-    <button id="viewToggle" class="btn" type="button" title="Переключить вид">Сетка</button>
-    <button id="themeToggle" class="btn btn-icon" type="button" title="Тема" aria-label="Переключить тему">◐</button>
-  </div>
+
+<header class="site-head">
+  <h1>Казанский Государственный Медицинский Университет</h1>
+  <p class="sub">Расписание для студентов на <span id="yearLabel">2026/2027</span> учебный год</p>
 </header>
 
-<section class="picker" aria-label="Выбор расписания">
-  <label class="field">
-    <span>Направление</span>
-    <select id="selProgram"></select>
-  </label>
-  <label class="field">
-    <span>Курс</span>
-    <select id="selCourse"></select>
-  </label>
-  <label class="field">
-    <span>Группа</span>
-    <input id="inpGroup" list="groupList" autocomplete="off" placeholder="номер группы">
-    <datalist id="groupList"></datalist>
-  </label>
-  <label class="field field-wide">
-    <span>Поиск по расписанию</span>
-    <input id="inpSearch" type="search" placeholder="дисциплина, преподаватель, аудитория">
-  </label>
-</section>
+<div class="notice" role="note">
+  <p class="notice-title">Сообщение от разработчика:</p>
+  <p>Уважаемые студенты! В связи с моим увольнением из учебно-методического отдела система электронного
+     расписания, разработанная на безвозмездной основе, прекратит свою работу с 1 ноября 2026.
+     Копия расписания сохранена на этом сайте, а таблицы Excel по-прежнему доступны на официальном сайте КГМУ.</p>
+</div>
 
-<main id="main">
-  <div class="sheet" id="sheet">
-    <div class="doc-head">
-      <div class="doc-meta">
-        <p class="doc-title">РАСПИСАНИЕ ЗАНЯТИЙ</p>
-        <p class="doc-sub" id="docSemester">на осенний семестр 2026 /2027 уч.г.</p>
-        <div class="doc-grid">
-          <p>Направление подготовки:</p><p id="docProgram">—</p>
-          <p>Уровень образования:</p><p id="docLevel">—</p>
-          <p>Форма обучения:</p><p id="docForm">—</p>
-          <p class="doc-course" id="docCourse">—</p>
-        </div>
-      </div>
-      <div class="doc-stamp" aria-hidden="true"></div>
+<form class="panel" id="searchForm" autocomplete="off">
+  <div class="field group-field">
+    <label for="groupInput">Группа:</label>
+    <div class="combo">
+      <input id="groupInput" type="text" placeholder="Выберите группу" autocomplete="off"
+             role="combobox" aria-expanded="false" aria-controls="groupDrop" aria-autocomplete="list">
+      <button type="button" class="combo-toggle" id="groupToggle" tabindex="-1" aria-label="Открыть список групп">▾</button>
+      <div class="combo-drop" id="groupDrop" role="listbox" hidden></div>
     </div>
-    <div id="viewHost" class="view-host"></div>
-    <p class="doc-note" id="docNote"></p>
+    <div class="group-hint" id="groupHint"></div>
   </div>
-</main>
+
+  <div class="field dates-field">
+    <label for="dateFrom">Даты:</label>
+    <div class="dates">
+      <input type="date" id="dateFrom" aria-label="Дата с">
+      <span class="dash">—</span>
+      <input type="date" id="dateTo" aria-label="Дата по">
+    </div>
+    <div class="presets">
+      <button type="button" class="chip-btn" data-preset="current">Текущая неделя</button>
+      <button type="button" class="chip-btn" data-preset="next">Следующая нед.</button>
+      <button type="button" class="chip-btn" data-preset="month">Месяц</button>
+    </div>
+  </div>
+
+  <button type="submit" class="search-btn" id="searchBtn">Поиск</button>
+</form>
+
+<main id="results" class="results" aria-live="polite"></main>
 
 <footer class="foot">
-  <p>Источник данных — официальный сайт КГМУ (<a href="https://kazangmu.ru/obuchenie/studentam/raspisanie-zanyatij" target="_blank" rel="noopener">kazangmu.ru</a>).
+  <p>Данные — официальные расписания КГМУ (<a href="https://kazangmu.ru/obuchenie/studentam/raspisanie-zanyatij" target="_blank" rel="noopener">kazangmu.ru</a>).
      Копия сделана на случай отключения оригинального сервиса.</p>
-  <p class="muted">Обновлено: <span id="stampDate">—</span></p>
+  <p class="muted">Обновлено: <span id="stamp">—</span> · <a href="#" id="scansLink">сканы заочных и магистерских расписаний</a></p>
 </footer>
 
 <script src="assets/app.js"></script>
