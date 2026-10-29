@@ -153,7 +153,13 @@ function preprocess(payload) {
     const arr = (weeks[w] || []).slice().sort((a, b) => a.ts.localeCompare(b.ts));
     byWeek[w] = arr;
   });
-  return { byWd, cycles: payload.cycles || [], byWeek, hasWeeks: Object.keys(byWeek).length > 0 };
+  const dated = {};
+  (payload.dated || []).forEach((l) => {
+    (dated[l.d] = dated[l.d] || []).push(l);
+  });
+  Object.values(dated).forEach((arr) => arr.sort((a, b) => a.ts.localeCompare(b.ts)));
+  return { byWd, cycles: payload.cycles || [], byWeek,
+           hasWeeks: Object.keys(byWeek).length > 0, dated };
 }
 
 function cyclesOn(date, cycles) {
@@ -191,6 +197,8 @@ function inWeek(sub, week) {
 
 function dayLessons(date, data) {
   const wd = date.getDay() === 0 ? 7 : date.getDay();
+  const day = data.dated[iso(date)];
+  if (day) return day;
   if (data.hasWeeks) {
     const arr = data.byWeek[String(weekNo(date))] || [];
     return arr.filter((l) => l.wd === wd);
@@ -298,6 +306,22 @@ async function doSearch(push) {
       `${fmtShort(from)} — ${fmtShort(to)}`));
     host.appendChild(head);
     const total = renderDays(dates, data);
+    if (!total && payload.period && payload.period.length === 2) {
+      const a = payload.period[0].split('-'), b = payload.period[1].split('-');
+      const box = el('div', 'empty-state');
+      box.appendChild(document.createTextNode(
+        `У группы ${name} занятия идут сессией: ${a[2]}.${a[1]}.${a[0]} — ${b[2]}.${b[1]}.${b[0]}. `));
+      const btn = el('button', 'chip-btn', 'показать сессию');
+      btn.type = 'button';
+      btn.addEventListener('click', () => {
+        $('#dateFrom').value = payload.period[0];
+        $('#dateTo').value = payload.period[1];
+        doSearch(true);
+      });
+      box.appendChild(btn);
+      host.appendChild(box);
+      return;
+    }
     if (!total) {
       const none = el('div', 'empty-state',
         'На этот период занятий в базе нет. Проверьте даты: база содержит осенний семестр 2026/2027.');
