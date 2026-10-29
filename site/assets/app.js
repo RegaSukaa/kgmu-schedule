@@ -285,6 +285,7 @@ async function doSearch(push) {
   host.innerHTML = '';
   host.appendChild(el('div', 'empty-state', 'Загрузка…'));
   try {
+    rememberGroup(name);
     const payload = await loadGroup(name);
     const data = preprocess(payload);
     const dates = eachDate(from, to);
@@ -441,16 +442,24 @@ function bind() {
   $('#scansLink').addEventListener('click', (e) => { e.preventDefault(); renderScans(); });
 }
 
+function savedGroup() {
+  try { return localStorage.getItem('kgmu_group') || ''; } catch (e) { return ''; }
+}
+
+function rememberGroup(name) {
+  try { localStorage.setItem('kgmu_group', name); } catch (e) { /* ignore */ }
+}
+
 async function boot() {
   await loadIndex();
   bind();
-  setPreset('current');
+  setPreset('current');                     // по умолчанию: с сегодня до конца недели
   const p = new URLSearchParams(location.search);
-  const g = p.get('g');
   const from = p.get('from');
   const to = p.get('to');
   if (from) $('#dateFrom').value = from;
   if (to) $('#dateTo').value = to;
+  const g = p.get('g') || savedGroup();
   if (g) {
     input().value = g;
     updateHint();
