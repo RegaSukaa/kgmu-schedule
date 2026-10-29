@@ -329,6 +329,11 @@ function setPreset(kind) {
   const now = new Date();
   let from, to;
   if (kind === 'current') {
+    // с сегодняшнего дня до конца текущей недели (воскресенья)
+    from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const mon = mondayOf(now);
+    to = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+  } else if (kind === 'week') {
     from = mondayOf(now);
     to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 6);
   } else if (kind === 'next') {
