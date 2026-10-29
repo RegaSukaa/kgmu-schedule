@@ -256,6 +256,33 @@ html[data-theme="dark"] .doc-stamp { mix-blend-mode: screen; opacity: .75; }
 .lesson-meta span + span::before { content: "·"; margin: 0 6px; }
 .empty { padding: 10px 12px; color: var(--muted); font-size: 13px; }
 
+/* ---------- циклы ---------- */
+.cycles { display: flex; flex-direction: column; gap: 10px; }
+.cycles-head { margin: 0 0 4px; font-weight: 650; }
+.cycle { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.cycle-top { display: flex; gap: 8px; align-items: baseline; }
+.cycle-subj { font-weight: 600; }
+.cycle-meta { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.cycle-periods { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.cycle-period { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.cp-dates { font-weight: 600; }
+.cp-time { color: var(--muted); }
+.cp-hours { color: var(--muted); }
+
+/* ---------- сканы ---------- */
+.scans { display: flex; flex-direction: column; gap: 14px; }
+.scan { margin: 0; }
+.scan img {
+  display: block;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+.scan figcaption { text-align: center; font-size: 12px; color: var(--muted); margin-top: 6px; }
+
 /* поиск: подсветка */
 .mark { background: #fde68a; color: #111; border-radius: 3px; padding: 0 1px; }
 

@@ -18,12 +18,12 @@ const el = (tag, cls, text) => {
 };
 
 let DATA = null;
-let state = { program: 0, course: 0, group: '', view: 'grid', query: '' };
+let state = { program: 0, programId: '', course: 0, group: '', view: 'grid', query: '' };
 
 /* ---------- url ---------- */
 function readUrl() {
   const p = new URLSearchParams(location.search);
-  state.program = Number(p.get('p') || 0);
+  state.programId = p.get('p') || '';
   state.course = Number(p.get('c') || 0);
   state.group = p.get('g') || '';
   state.view = p.get('v') === 'days' ? 'days' : 'grid';
@@ -32,7 +32,7 @@ function readUrl() {
 
 function writeUrl() {
   const p = new URLSearchParams();
-  p.set('p', state.program);
+  p.set('p', curProgram().id);
   p.set('c', state.course);
   if (state.group) p.set('g', state.group);
   if (state.view !== 'grid') p.set('v', state.view);
@@ -59,6 +59,12 @@ function fillPrograms() {
   sel.value = state.program;
 }
 
+function resolveProgram() {
+  if (!state.programId) return;
+  const i = DATA.programs.findIndex((p) => p.id === state.programId);
+  state.program = i >= 0 ? i : 0;
+}
+
 function fillCourses() {
   const sel = $('#selCourse');
   sel.innerHTML = '';
@@ -74,6 +80,9 @@ function fillGroups() {
   const c = curCourse();
   const names = c.groups.map((g) => g.name);
   if (!names.includes(state.group)) state.group = names[0] || '';
+  const inp = $('#inpGroup');
+  inp.disabled = !names.length;
+  inp.placeholder = names.length ? 'номер группы' : 'скан документа';
   const dl = $('#groupList');
   dl.innerHTML = '';
   names.forEach((n) => {
@@ -255,6 +264,58 @@ function renderGrid() {
   }
 }
 
+/* --- скан официального документа --- */
+function renderScans(c) {
+  const host = $('#viewHost');
+  host.innerHTML = '';
+  const wrap = el('div', 'scans');
+  c.scans.forEach((src, i) => {
+    const fig = el('figure', 'scan');
+    const img = document.createElement('img');
+    img.loading = i ? 'lazy' : 'eager';
+    img.src = src;
+    img.alt = `Страница ${i + 1} расписания`;
+    img.decoding = 'async';
+    fig.appendChild(img);
+    fig.appendChild(el('figcaption', null, `Страница ${i + 1} из ${c.scans.length}`));
+    wrap.appendChild(fig);
+  });
+  host.appendChild(wrap);
+}
+
+/* --- цикловые занятия (4-6 курс) --- */
+function renderCycles(c) {
+  const host = $('#viewHost');
+  host.innerHTML = '';
+  const group = state.group || (c.groups[0] && c.groups[0].name);
+  const list = c.cycles.filter((x) => x.group === group);
+  const box = el('div', 'cycles');
+  const head = el('p', 'cycles-head', `Группа ${group} · ${list.length} циклов`);
+  box.appendChild(head);
+  if (!list.length) {
+    box.appendChild(el('p', 'empty', 'Для этой группы циклы не найдены.'));
+  }
+  list.forEach((cy) => {
+    const card = el('div', 'cycle');
+    const top = el('div', 'cycle-top');
+    top.appendChild(el('span', 'cycle-subj', cy.subject));
+    card.appendChild(top);
+    if (cy.teacher) card.appendChild(el('div', 'cycle-meta', cy.teacher));
+    if (cy.place) card.appendChild(el('div', 'cycle-meta', cy.place));
+    const periods = el('div', 'cycle-periods');
+    cy.periods.forEach((p) => {
+      const row = el('div', 'cycle-period');
+      row.appendChild(el('span', 'cp-dates', p.dates || '—'));
+      if (p.start) row.appendChild(el('span', 'cp-time', `${p.start}–${p.end}`));
+      if (p.hours) row.appendChild(el('span', 'cp-hours', `${p.hours} ч`));
+      periods.appendChild(row);
+    });
+    card.appendChild(periods);
+    box.appendChild(card);
+  });
+  host.appendChild(box);
+}
+
 /* --- карточки по дням --- */
 function renderDays() {
   const c = curCourse();
@@ -307,9 +368,21 @@ function render() {
   const p = curProgram();
   renderMeta();
   $('#viewToggle').textContent = state.view === 'grid' ? 'Сетка' : 'Дни';
-  const host = $('#viewHost');
-  if (state.view === 'grid') renderGrid(); else renderDays();
+  $('#viewToggle').disabled = !!(curCourse().cycles || (curCourse().scans && !curCourse().lessons.length));
   const c = curCourse();
+  if (c.cycles && !c.lessons.length) {
+    renderCycles(c);
+    $('#docNote').textContent = `Цикловые занятия · ${c.groups.length} групп · источник: официальный сайт КГМУ`;
+    writeUrl();
+    return;
+  }
+  if (c.scans && !c.lessons.length) {
+    renderScans(c);
+    $('#docNote').textContent = `Официальный документ (${c.scans.length} стр.) · скан с сайта КГМУ`;
+    writeUrl();
+    return;
+  }
+  if (state.view === 'grid') renderGrid(); else renderDays();
   const n = c.lessons.length;
   const who = state.view === 'grid' ? `${c.groups.length} групп` : `группа ${state.group}`;
   $('#docNote').textContent = `${who} · ${n} занятий в недельном цикле · источник: официальный сайт КГМУ`;
@@ -356,6 +429,7 @@ async function boot() {
   try { document.documentElement.dataset.theme = localStorage.getItem('kgmu_theme') || 'light'; } catch (e) { /* ignore */ }
   const res = await fetch('data/schedule.json', { cache: 'no-cache' });
   DATA = await res.json();
+  resolveProgram();
   if (state.program >= DATA.programs.length) state.program = 0;
   if (state.course >= curProgram().courses.length) state.course = 0;
   fillPrograms(); fillCourses(); fillGroups();

@@ -28,6 +28,14 @@ TITLES = {
     "33.04.01": "Промышленная фармация",
 }
 
+BASE = {
+    "lechebnoe-delo": ("31.05.01", "Лечебное дело"),
+    "pediatriya": ("31.05.02", "Педиатрия"),
+    "stomatologiya": ("31.05.03", "Стоматология"),
+    "mediko-profilakticheskoe-delo": ("32.05.01", "Медико-профилактическое дело"),
+    "farmaciya": ("33.05.01", "Фармация"),
+}
+
 PROGRAM_TITLE = {
     "lechebnoe-delo": "Лечебное дело",
     "pediatriya": "Педиатрия",
@@ -43,7 +51,10 @@ PROGRAM_TITLE = {
     "socialnaya-rabota-bakalavriat-zaochn": "Социальная работа (бакалавриат, заочная)",
     "socialnaya-rabota-magistratura-zaochn": "Социальная работа (магистратура, заочная)",
     "obschestvennoe-zdravoohranenie-magistratura-ochn": "Общественное здравоохранение (магистратура, очная)",
-    "obschestvennoe-zdravoohranenie-magistratura-o-zaochn": "Общественное здравоохранение (магистратура, очно-заочная)",
+    "obschestvennoe-zdravoohranenie-magistratura-o-zaochn": "Общественное здравоохранение (магистратура)",
+    "sestrinskoe-delo-o-zaochn": "Сестринское дело",
+    "socialnaya-rabota-bakalavriat-zaochn": "Социальная работа (бакалавриат)",
+    "socialnaya-rabota-magistratura-zaochn": "Социальная работа (магистратура)",
 }
 
 
@@ -54,8 +65,15 @@ def split_direction(s):
     return "", (s or "").strip()
 
 
-def prog_key(name):
-    return name
+TR = {"а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh",
+      "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o",
+      "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "h", "ц": "c",
+      "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya"}
+
+
+def slug(text):
+    out = "".join(TR.get(ch, ch) for ch in str(text).lower())
+    return re.sub(r"[^a-z0-9]+", "-", out).strip("-")
 
 
 def main():
@@ -66,7 +84,7 @@ def main():
     def prog(code, title, form, level):
         key = f"{code}|{title}|{form}"
         p = programs.setdefault(key, {
-            "id": re.sub(r"[^a-z0-9]+", "-", f"{code} {form}".lower()).strip("-"),
+            "id": slug(f"{code} {title} {form}"),
             "code": code, "title": title, "form": form, "level": level, "courses": [],
         })
         return p
@@ -120,7 +138,11 @@ def main():
         if not fn.endswith(".json"):
             continue
         d = json.load(open(os.path.join(parsed_dir, fn), encoding="utf-8"))
-        code, title = split_direction(d["meta"].get("direction", ""))
+        base = fn.split("__")[0]
+        if base in BASE:
+            code, title = BASE[base]
+        else:
+            code, title = split_direction(d["meta"].get("direction", ""))
         if not title:
             title = PROGRAM_TITLE.get(fn.split("__")[0], fn)
         m = next((x for x in man if x["key"] == fn[:-5]), {})
@@ -142,7 +164,41 @@ def main():
         p = prog(code, title, d["meta"].get("form") or "очная", d["meta"].get("level") or "специалитет")
         add_course(p, course, label, d["groups"], lessons, m.get("url", ""))
 
-    plist = sorted(programs.values(), key=lambda p: (p["code"], p["form"]))
+    # --- цикловые занятия (4-6 курс) ---
+    cycles_dir = os.path.join(DATA, "parsed_cycles")
+    if os.path.isdir(cycles_dir):
+        for fn in sorted(os.listdir(cycles_dir)):
+            if not fn.endswith(".json"):
+                continue
+            d = json.load(open(os.path.join(cycles_dir, fn), encoding="utf-8"))
+            base = fn.split("__")[0]
+            code, title = BASE.get(base) or split_direction(d["meta"].get("direction", ""))
+            m = next((x for x in man if x["key"] == fn[:-5]), {})
+            label = "4–6 курс (циклы)" if "4-6" in m.get("label", "") else "3–5 курс (циклы)"
+            groups = []
+            for c in d["cycles"]:
+                if c["group"] not in [g["name"] for g in groups]:
+                    groups.append({"name": c["group"], "potok": ""})
+            p = prog(code, title, "очная", "специалитет")
+            add_course(p, d["meta"].get("course") or 4, label, groups, [], m.get("url", ""),
+                       {"cycles": d["cycles"]})
+
+    # --- сканы PDF (без текстового слоя) ---
+    scans_path = os.path.join(DATA, "scans.json")
+    if os.path.exists(scans_path):
+        scans = json.load(open(scans_path, encoding="utf-8"))
+        for key, sc in scans.items():
+            base = key.split("__")[0]
+            title = PROGRAM_TITLE.get(base, sc["program_page"])
+            form = "заочная" if base.endswith("zaochn") and "o-zaochn" not in base else ("очно-заочная" if "o-zaochn" in base else "очная")
+            level = "магистратура" if "magistratura" in base else "специалитет"
+            m = next((x for x in man if x["key"] == key), {})
+            label = m.get("label", sc.get("label", "")) or "курс"
+            course_no = int(re.sub(r"\D", "", label) or 0)
+            p = prog("", title, form, level)
+            add_course(p, course_no, label, [], [], sc.get("source", ""), {"scans": sc["pages"]})
+
+    plist = sorted(programs.values(), key=lambda p: (p["code"] == "", p["code"], p["title"], p["form"]))
     out = {
         "generated": time.strftime("%Y-%m-%d %H:%M"),
         "year": "2026/2027",
