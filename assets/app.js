@@ -172,13 +172,31 @@ function cyclesOn(date, cycles) {
   return out;
 }
 
+/* Скобки у занятия — диапазон учебных недель: «(2-10)» = со 2-й по 10-ю неделю,
+   «(2,4,6,8,10)» = только эти недели. Неделя 1 — та, в которую попало 1 сентября 2026. */
+function weekSpans(sub) {
+  const s = String(sub || '').replace(/\s+/g, '');
+  if (!s || !/^\d+(-\d+)?(,\d+(-\d+)?)*$/.test(s)) return null;
+  return s.split(',').map((part) => {
+    const [a, b] = part.split('-').map(Number);
+    return [a, b === undefined ? a : b];
+  });
+}
+
+function inWeek(sub, week) {
+  const spans = weekSpans(sub);
+  if (!spans) return true;
+  return spans.some(([a, b]) => week >= a && week <= b);
+}
+
 function dayLessons(date, data) {
   const wd = date.getDay() === 0 ? 7 : date.getDay();
   if (data.hasWeeks) {
     const arr = data.byWeek[String(weekNo(date))] || [];
     return arr.filter((l) => l.wd === wd);
   }
-  const base = (data.byWd[wd] || []).slice();
+  const wk = weekNo(date);
+  const base = (data.byWd[wd] || []).filter((l) => inWeek(l.sub, wk));
   const cyc = cyclesOn(date, data.cycles);
   if (!cyc.length) return base;
   // во время цикла практические занятия группы не идут — остаются лекции
@@ -226,7 +244,8 @@ function renderDays(dates, data) {
     const lessons = dayLessons(d, data);
     const block = el('section', 'day');
     const h = el('h2', 'day-title', fmtLong(d));
-    if (data.hasWeeks) h.appendChild(el('span', 'week-note', `${weekNo(d)}-я неделя`));
+    const wn = weekNo(d);
+    if (wn >= 1) h.appendChild(el('span', 'week-note', `${wn}-я учебная неделя`));
     if (iso(d) === today) h.appendChild(el('span', 'today', 'сегодня'));
     block.appendChild(h);
     if (!lessons.length) {
