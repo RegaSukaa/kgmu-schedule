@@ -37,6 +37,9 @@ def main():
             tm = TEACH.search(s); teacher = ''
             if tm:
                 teacher = tm.group(1).strip(' ,;'); s = s[:tm.start()].strip(' ,;')
+            pm = re.match(r'^.*?\((.*)\)\s*$', p)
+            if pm and ',' in pm.group(1):
+                p = pm.group(1).strip()
             rows.append({'d': f'{m.group(3)}-{m.group(2)}-{m.group(1)}',
                          'ts': f'{int(m2.group(1)):02d}:{m2.group(2)}',
                          'te': f'{int(m2.group(3)):02d}:{m2.group(4)}',
