@@ -175,6 +175,17 @@ def main():
     if os.path.exists(sp):
         scans = json.load(open(sp, encoding="utf-8"))
 
+    # оставляем только группы, для которых есть хоть какие-то занятия
+    def has_data(name):
+        return bool(templates.get(name) or override.get(name) or dated.get(name)
+                    or cycles.get(name) or weeks.get(name))
+
+    skip = [n for n in groups if not has_data(n)]
+    for n in skip:
+        groups.pop(n, None)
+    if skip:
+        print("групп без расписания (исключены):", len(skip))
+
     index = {"generated": time.strftime("%Y-%m-%d %H:%M"), "year": "2026/2027",
              "semester": "осенний", "groups": sorted(groups.values(), key=lambda g: g["n"]),
              "scans": scans}
