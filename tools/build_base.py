@@ -59,7 +59,7 @@ def main():
         for x in d.get("schedule", []):
             for gname in (x.get("sg") or []):
                 add_lesson(gname, {
-                    "wd": x.get("wd"), "ts": x.get("ts"), "te": x.get("te"),
+                    "wd": (x.get("wd") or 1) - 1, "ts": x.get("ts"), "te": x.get("te"),
                     "type": LT.get(x.get("lt"), "practice"),
                     "subject": (x.get("ln") or "").strip(),
                     "teacher": (x.get("tn") or "").strip(),
@@ -87,6 +87,33 @@ def main():
                     "subject": it["subject"], "teacher": it["teacher"],
                     "sub": it["subgroups"], "place": it["place"],
                 })
+
+    # 2b) официальные страницы сайта (front API) — приоритет над Excel
+    override = {}
+    fdir = os.path.join(DATA, "raw", "front_pages")
+    if os.path.isdir(fdir):
+        for fn in sorted(os.listdir(fdir)):
+            if not fn.endswith(".json"):
+                continue
+            d = json.load(open(os.path.join(fdir, fn), encoding="utf-8"))
+            code, title = split_direction(d.get("info", {}).get("name", ""))
+            crs = (d.get("groups") or [{}])[0].get("crs") or 0
+            fac = (d.get("groups") or [{}])[0].get("dep", "")
+            for g in d.get("groups", []):
+                reg_group(g["grp"], code, title, g.get("crs") or crs, "очная", fac)
+            for x in d.get("schedule", []):
+                rec = {
+                    "wd": (x.get("wd") or 1) - 1, "ts": x.get("ts"), "te": x.get("te"),
+                    "type": LT.get(x.get("lt"), "practice"),
+                    "subject": (x.get("ln") or "").strip(),
+                    "teacher": (x.get("tn") or "").strip(),
+                    "sub": (x.get("ws") or "").strip(),
+                    "place": (x.get("loc") or "").strip(),
+                }
+                for gname in (x.get("sg") or []):
+                    bucket = override.setdefault(gname, [])
+                    if rec not in bucket:
+                        bucket.append(rec)
 
     # 3) циклы (4-6 курс) — с реальными датами
     cycles_dir = os.path.join(DATA, "parsed_cycles")
@@ -159,7 +186,7 @@ def main():
         payload = {
             "n": name, "prog": g["prog"], "code": g["code"], "course": g["course"], "form": g["form"],
             "faculty": g.get("faculty", ""),
-            "lessons": templates.get(name, []),
+            "lessons": override.get(name) or templates.get(name, []),
             "cycles": cycles.get(name, []),
             "weeks": weeks.get(name, {}),
             "dated": dated.get(name, []),
