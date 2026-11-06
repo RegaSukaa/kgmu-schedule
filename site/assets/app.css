@@ -1,20 +1,22 @@
 :root {
-  --green: #116b3a;
-  --green-2: #2f9e58;
-  --green-soft: #e6f4ec;
-  --green-line: #bfe0cc;
-  --bg: #f4f6f5;
+  /* палитра по референсу kgmutest (синяя, светлая) */
+  --green: #2f66c5;
+  --green-2: #5d8ee3;
+  --green-soft: #eaf2fd;
+  --green-line: #cfe0f5;
+  --bg: #edf3f9;
   --card: #ffffff;
-  --text: #16221b;
-  --muted: #6b7a71;
-  --line: #dfe5e1;
-  --chip-dark: #2f3b34;
-  --chip-blue-bg: #dcecff;
-  --chip-blue: #15497e;
-  --warn-bg: #fff6d9;
-  --warn-border: #e9cf74;
+  --text: #182a45;
+  --muted: #5c6e86;
+  --line: #dbe5f0;
+  --chip-dark: #2f66c5;
+  --chip-blue-bg: #dceaff;
+  --chip-blue: #1b4d94;
+  --warn-bg: #e8f6f3;
+  --warn-border: #bfe6dd;
+  --mint-ink: #0c7667;
   --radius: 14px;
-  --shadow: 0 1px 2px rgba(20, 40, 30, .05), 0 10px 30px rgba(20, 40, 30, .06);
+  --shadow: 0 12px 32px rgba(17, 41, 74, .08);
 }
 
 * { box-sizing: border-box; }
@@ -43,7 +45,7 @@ a { color: var(--green); }
   margin: 0;
   font-size: clamp(19px, 4.6vw, 27px);
   line-height: 1.2;
-  color: var(--green);
+  color: #0f2340;
   font-weight: 800;
   letter-spacing: -.01em;
 }
@@ -62,9 +64,9 @@ a { color: var(--green); }
   border: 1px solid var(--green-line);
   border-radius: 12px;
   font-size: 13.5px;
-  color: #14532d;
+  color: #1b4d94;
 }
-.notice-title { margin: 0 0 4px; font-weight: 750; color: var(--green); }
+.notice-title { margin: 0 0 4px; font-weight: 750; color: #1b4d94; }
 .notice p { margin: 0; }
 .notice a {
   display: inline-block;
@@ -77,7 +79,7 @@ a { color: var(--green); }
   font-weight: 700;
   white-space: nowrap;
 }
-.notice a:hover { background: #0d5c31; }
+.notice a:hover { background: #24559f; }
 
 /* ---------- панель поиска ---------- */
 .panel {
@@ -104,7 +106,7 @@ a { color: var(--green); }
   padding: 10px 40px 10px 12px;
   border: 1px solid var(--line);
   border-radius: 11px;
-  background: #fbfdfc;
+  background: #f7faff;
   font: inherit;
   color: var(--text);
 }
@@ -153,7 +155,7 @@ a { color: var(--green); }
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 11px;
-  background: #fbfdfc;
+  background: #f7faff;
   font: inherit;
   font-size: 14px;
   color: var(--text);
@@ -189,7 +191,7 @@ a { color: var(--green); }
   cursor: pointer;
   box-shadow: 0 2px 0 rgba(0, 0, 0, .12);
 }
-.search-btn:hover { background: #0d5c31; }
+.search-btn:hover { background: #24559f; }
 .search-btn:disabled { opacity: .6; cursor: default; }
 
 /* ---------- результаты ---------- */
@@ -280,8 +282,8 @@ a { color: var(--green); }
   white-space: nowrap;
 }
 .cycle-chip {
-  background: #efe2ff;
-  color: #5b21b6;
+  background: #ffecec;
+  color: #b3261e;
   border-radius: 7px;
   padding: 3px 9px;
   font-size: 12.5px;
