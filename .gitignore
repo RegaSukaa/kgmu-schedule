@@ -9,3 +9,5 @@ __pycache__/
 *.pyc
 probe_out.txt
 .venv/
+shot*.png
+*.zip
